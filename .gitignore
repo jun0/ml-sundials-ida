@@ -1,0 +1,8 @@
+# Object files
+*.o
+*.a
+*.cmo
+*.cmx
+*.cma
+*.cmxa
+*.cmi
