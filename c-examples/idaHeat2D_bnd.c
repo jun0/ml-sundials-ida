@@ -149,7 +149,7 @@ int main(void)
   if(check_flag(&ier, "IDABand", 1)) return(1);
  
   /* Call IDACalcIC to correct the initial values. */
-  
+
   ier = IDACalcIC(mem, IDA_YA_YDP_INIT, t1);
   if(check_flag(&ier, "IDACalcIC", 1)) return(1);
 
@@ -193,6 +193,18 @@ int main(void)
  *--------------------------------------------------------------------
  */
 
+void print_matrix (N_Vector va, int m, const char *prefix)
+{
+  int i, j;
+  realtype *a = NV_DATA_S (va);
+  for (i = 0; i <= m-1; ++i) {
+    printf ("%s[", prefix);
+    for (j = 0; j <= m-2; ++j)
+      printf ("%g, ", a[j*m + i]);
+    printf ("%g]\n", a[(m-1)*m + i]);
+  }
+}
+
 /*
  * heatres: heat equation system residual function                       
  * This uses 5-point central differencing on the interior points, and    
@@ -214,7 +226,7 @@ int heatres(realtype tres, N_Vector uu, N_Vector up, N_Vector resval,
   data = (UserData)user_data;
   mm = data->mm;
   coeff = data->coeff;
-  
+
   /* Initialize resval to uu, to take care of boundary equations. */
   N_VScale(ONE, uu, resval);
   
@@ -247,6 +259,7 @@ static int SetInitialProfile(UserData data, N_Vector uu, N_Vector up,
 {
   realtype xfact, yfact, *udata, *updata, *iddata;
   long int mm, mm1, i, j, offset, loc;
+  int size;
   
   mm = data->mm;
   mm1 = mm - 1;
@@ -287,7 +300,7 @@ static int SetInitialProfile(UserData data, N_Vector uu, N_Vector up,
         udata[loc] = BVAL; updata[loc] = ZERO; iddata[loc] = ZERO; }
     }
   }
-  
+
   return(0);
 
 }

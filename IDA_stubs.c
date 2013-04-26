@@ -155,6 +155,7 @@ int callback_residual_fn (realtype tres, N_Vector yy, N_Vector yp,
   CAMLparam0 ();
   struct ida *ida = user_data;
   CAMLlocalN (args, 4);
+  CAMLlocal1 (retcode);
   intnat dims[1] = {0};
 
   /* Convert everything to OCaml values.  */
@@ -173,8 +174,9 @@ int callback_residual_fn (realtype tres, N_Vector yy, N_Vector yp,
                            | CAML_BA_EXTERNAL,
                            1, NV_DATA_S (rr), dims);
 
-  caml_callbackN (Field (ida->caml_data, CAML_DATA_RESIDUAL_FN), 4, args);
-  CAMLreturnT (int, 0);
+  retcode = caml_callbackN (Field (ida->caml_data, CAML_DATA_RESIDUAL_FN),
+                            4, args);
+  CAMLreturnT (int, Int_val (retcode));
 }
 
 /* ida_init : residual_fn -> float -> vector -> vector -> ida */
@@ -245,6 +247,106 @@ CAMLprim void caml_ida_sv_tolerances (value val_ida, value val_rtol,
     abort ();                   /* TODO: raise exception */
 
   N_VDestroy_Serial (avtol);
+  CAMLreturn0;
+}
+
+/* ida_ss_tolerances : ida -> float -> float -> unit */
+CAMLprim void caml_ida_ss_tolerances (value val_ida, value val_rtol,
+                                      value val_atol)
+{
+  CAMLparam3 (val_ida, val_rtol, val_atol);
+  struct ida *ida = IDA_val (val_ida);
+  double rtol = Double_val (val_rtol);
+  double atol = Double_val (val_atol);
+  int retval;
+
+  retval = IDASStolerances (ida->mem, rtol, atol);
+  if (check_flag (&retval, "IDASStolerances", 1))
+    abort ();                   /* TODO: raise exception */
+
+  CAMLreturn0;
+}
+
+/* ida_calc_ic : ida -> calc_ic_opt -> float -> unit */
+CAMLprim value caml_ida_calc_ic (value val_ida, value val_opt, value val_tout1)
+{
+  CAMLparam3 (val_ida, val_opt, val_tout1);
+  struct ida *ida = IDA_val (val_ida);
+  double tout1 = Double_val (val_tout1);
+  int ret, icopt;
+
+  switch (Int_val (val_opt))
+    {
+    case 0:
+      icopt = IDA_YA_YDP_INIT;
+      break;
+    case 1:
+      icopt = IDA_Y_INIT;
+      break;
+    default:
+      assert (FALSE);
+    }
+
+  ret = IDACalcIC (ida->mem, icopt, tout1);
+  if (ret < 0)
+    abort ();                   /* TODO: raise exception */
+
+  CAMLreturn (ret);
+}
+
+CAMLprim void caml_ida_band (value val_ida, value val_num_eqs,
+                             value val_mu, value val_ml)
+{
+  CAMLparam4 (val_ida, val_num_eqs, val_mu, val_ml);
+
+  struct ida *ida = IDA_val (val_ida);
+  int num_eqs = Int_val (val_num_eqs);
+  int mu = Int_val (val_mu);
+  int ml = Int_val (val_ml);
+  int retcode;
+
+  assert (ida->mem);
+  retcode = IDABand (ida->mem, num_eqs, mu, ml);
+  if(check_flag(&retcode, "IDACalcIC", 1))
+    abort ();                   /* TODO: raise exception */
+
+  CAMLreturn0;
+}
+
+/* ida_set_id : ida -> nvector -> unit */
+CAMLprim void caml_ida_set_id (value val_ida, value val_id)
+{
+  CAMLparam2 (val_ida, val_id);
+  struct ida *ida = IDA_val (val_ida);
+  N_Vector id = nvector_of_bigarray (val_id);
+
+  assert (ida->mem);
+  IDASetId (ida->mem, id);
+
+  N_VDestroy (id);
+  CAMLreturn0;
+}
+
+/* ida_set_constraints : ida -> nvector -> unit */
+CAMLprim void caml_ida_set_constraints (value val_ida, value val_constraints)
+{
+  CAMLparam2 (val_ida, val_constraints);
+  struct ida *ida = IDA_val (val_ida);
+  N_Vector constraints = nvector_of_bigarray (val_constraints);
+
+  assert (ida->mem);
+#ifndef NDEBUG
+  {
+    int i;
+    double *c = NV_DATA_S (constraints);
+    for (i = 0; i < NV_LENGTH_S (constraints); ++i)
+      assert (c[i] == 0.0 || c[i] == 1.0 || c[i] == 2.0 ||
+              c[i] == -1.0 || c[i] == -2.0);
+  }
+#endif
+  IDASetConstraints (ida->mem, constraints);
+
+  N_VDestroy (constraints);
   CAMLreturn0;
 }
 
@@ -420,8 +522,8 @@ CAMLprim value caml_ida_get_last_order (value val_ida)
   CAMLparam1 (val_ida);
   struct ida *ida = IDA_val (val_ida);
   int ret;
+  assert (ida->mem);
   IDAGetLastOrder (ida->mem, &ret);
-  /* TODO: check return value */
   CAMLreturn (Val_int (ret));
 }
 
@@ -431,8 +533,8 @@ CAMLprim value caml_ida_get_num_steps (value val_ida)
   CAMLparam1 (val_ida);
   struct ida *ida = IDA_val (val_ida);
   long ret;
+  assert (ida->mem);
   IDAGetNumSteps (ida->mem, &ret);
-  /* TODO: check return value */
   CAMLreturn (Val_long (ret));
 }
 
@@ -442,8 +544,8 @@ CAMLprim value caml_ida_get_last_step (value val_ida)
   CAMLparam1 (val_ida);
   struct ida *ida = IDA_val (val_ida);
   double ret;
+  assert (ida->mem);
   IDAGetLastStep (ida->mem, &ret);
-  /* TODO: check return value */
   CAMLreturn (caml_copy_double (ret));
 }
 
@@ -453,8 +555,9 @@ CAMLprim value caml_ida_dls_get_num_res_evals (value val_ida)
   CAMLparam1 (val_ida);
   struct ida *ida = IDA_val (val_ida);
   long ret;
-  IDADlsGetNumResEvals (ida->mem, &ret);
-  /* TODO: check return value */
+  int retcode = IDADlsGetNumResEvals (ida->mem, &ret);
+  /* TODO: raise exception if dense linear solver not initialized.  */
+  assert (retcode == IDA_SUCCESS);
   CAMLreturn (Val_long (ret));
 }
 
@@ -464,8 +567,9 @@ CAMLprim value caml_ida_get_num_res_evals (value val_ida)
   CAMLparam1 (val_ida);
   struct ida *ida = IDA_val (val_ida);
   long ret;
-  IDAGetNumResEvals (ida->mem, &ret);
-  /* TODO: check return value */
+  int retcode = IDAGetNumResEvals (ida->mem, &ret);
+  /* TODO: raise exception if dense linear solver not initialized.  */
+  assert (retcode == IDA_SUCCESS);
   CAMLreturn (Val_long (ret));
 }
 
@@ -475,8 +579,9 @@ CAMLprim value caml_ida_dls_get_num_jac_evals (value val_ida)
   CAMLparam1 (val_ida);
   struct ida *ida = IDA_val (val_ida);
   long ret;
-  IDADlsGetNumJacEvals (ida->mem, &ret);
-  /* TODO: check return value */
+  int retcode = IDADlsGetNumJacEvals (ida->mem, &ret);
+  /* TODO: raise exception if dense linear solver not initialized.  */
+  assert (retcode == IDA_SUCCESS);
   CAMLreturn (Val_long (ret));
 }
 
@@ -486,8 +591,8 @@ CAMLprim value caml_ida_get_num_nonlin_solv_iters (value val_ida)
   CAMLparam1 (val_ida);
   struct ida *ida = IDA_val (val_ida);
   long ret;
+  assert (ida->mem);
   IDAGetNumNonlinSolvIters (ida->mem, &ret);
-  /* TODO: check return value */
   CAMLreturn (Val_long (ret));
 }
 
@@ -497,8 +602,8 @@ CAMLprim value caml_ida_get_num_nonlin_solv_conv_fails (value val_ida)
   CAMLparam1 (val_ida);
   struct ida *ida = IDA_val (val_ida);
   long ret;
+  assert (ida->mem);
   IDAGetNumNonlinSolvConvFails (ida->mem, &ret);
-  /* TODO: check return value */
   CAMLreturn (Val_long (ret));
 }
 
@@ -508,8 +613,8 @@ CAMLprim value caml_ida_get_num_err_test_fails (value val_ida)
   CAMLparam1 (val_ida);
   struct ida *ida = IDA_val (val_ida);
   long ret;
+  assert (ida->mem);
   IDAGetNumErrTestFails (ida->mem, &ret);
-  /* TODO: check return value */
   CAMLreturn (Val_long (ret));
 }
 
@@ -519,8 +624,19 @@ CAMLprim value caml_ida_get_num_g_evals (value val_ida)
   CAMLparam1 (val_ida);
   struct ida *ida = IDA_val (val_ida);
   long ret;
+  assert (ida->mem);
   IDAGetNumGEvals (ida->mem, &ret);
-  /* TODO: check return value */
+  CAMLreturn (Val_long (ret));
+}
+
+/* caml_ida_get_num_nonlin_solve_conv_fails : ida -> int */
+CAMLprim value caml_ida_get_num_nonlin_solve_conv_fails (value val_ida)
+{
+  CAMLparam1 (val_ida);
+  struct ida *ida = IDA_val (val_ida);
+  long ret;
+  assert (ida->mem);
+  IDAGetNumNonlinSolvConvFails (ida->mem, &ret);
   CAMLreturn (Val_long (ret));
 }
 

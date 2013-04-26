@@ -20,9 +20,24 @@ struct
   include SUNDIALS
 
   (* Serial N_Vector is represented as a bigarray.  *)
-  type nvector = (float, realtype, c_layout) Array1.t
-  let nvector_of_array = Array1.of_array float64 c_layout
-  let nvector_of_list ls = nvector_of_array (Array.of_list ls)
+  module NVector = struct
+    type t = (float, realtype, c_layout) Array1.t
+    let of_array = Array1.of_array float64 c_layout
+    let of_list ls = of_array (Array.of_list ls)
+    let create = Array1.create float64 c_layout
+    let blit = Array1.blit
+    let fill = Array1.fill
+    let get = Array1.get
+    let set = Array1.set
+
+    let maxnorm u =
+      let rec go x i =
+        if i < Array1.dim u then
+          go (max x (abs_float u.{i})) (i+1)
+        else x
+      in go u.{0} 1
+  end
+  type nvector = NVector.t
   (* Dense DlsMat is represented as a bigarray.  *)
   type dlsmat = (float, realtype, c_layout) Array2.t
 
@@ -32,15 +47,27 @@ struct
     "caml_ida_init"
   external ida_sv_tolerances : ida -> float -> nvector -> unit =
     "caml_ida_sv_tolerances"
+  external ida_ss_tolerances : ida -> float -> float -> unit =
+    "caml_ida_ss_tolerances"
+
+  external ida_band : ida -> int -> int -> int -> unit =
+    "caml_ida_band"
+
+  type calc_ic_opt = IDA_YA_YDP_INIT | IDA_Y_INIT
+  external ida_calc_ic : ida -> calc_ic_opt -> float -> unit =
+    "caml_ida_calc_ic"
+
+  external ida_ss_tolerances : ida -> float -> float -> unit =
+    "caml_ida_ss_tolerances"
 
   (* TODO: allow the user to throw an exception instead of returning
      JacFnError.  *)
   type ida_dls_jac_fn_result = JacFnOK | JacFnStepTooBig | JacFnError
   type ida_dls_jac_fn =
-    float ->                            (* tt *)
+    float ->                            (* t *)
     float ->                            (* cj *)
-    nvector ->                          (* yy *)
-    nvector ->                          (* yp (i.e. y'(t)) *)
+    nvector ->                          (* y(t) *)
+    nvector ->                          (* y'(t) *)
     nvector ->                          (* rr *)
     dlsmat ->                           (* jacobian (output) *)
     nvector ->                          (* scratch space *)
@@ -51,6 +78,25 @@ struct
   (* Attach a direct linear solver with the given Jacobian function.  *)
   external ida_jacobian_fn : ida -> ida_dls_jac_fn -> unit
     = "caml_ida_dense_jacobian_fn"
+
+  (* Set algebraic/differential components in the y vector.  Required for
+     ida_calc_ic.  *)
+  external ida_set_id : ida -> nvector -> unit =
+    "caml_ida_set_id"
+
+  (* Specify inequality constraints for solution vector y.  At each dimension,
+     the nvector should be:
+        0.0 for no constraint
+        1.0 for y.{i} >= 0.0
+       -1.0 for y.{i} <= 0.0
+        2.0 for y.{i} > 0.0
+       -2.0 for y.{i} < 0.0
+     TODO: provide interface with this data type:
+     type ida_constraint =
+       UNCONSTRAINED | NON_NEGATIVE | NON_POSITIVE | POSITIVE | NEGATIVE
+   *)
+  external ida_set_constraints : ida -> nvector -> unit =
+    "caml_ida_set_constraints"
 
   external ida_get_last_order : ida -> int = "caml_ida_get_last_order"
   external ida_get_num_steps : ida -> int = "caml_ida_get_num_steps"
@@ -67,6 +113,8 @@ struct
   external ida_get_num_err_test_fails : ida -> int =
     "caml_ida_get_num_err_test_fails"
   external ida_get_num_g_evals : ida -> int = "caml_ida_get_num_g_evals"
+  external ida_get_num_nonlin_solve_conv_fails : ida -> int =
+    "caml_ida_get_num_nonlin_solve_conv_fails"
 
   external ida_get_root_info : ida -> int array -> unit =
     "caml_ida_get_root_info"

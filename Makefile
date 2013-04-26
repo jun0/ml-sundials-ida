@@ -24,12 +24,17 @@ OCAML_SUN_LDFLAGS=-cclib "-g ${SUN_LDFLAGS}"
 
 all: ${ALL_EXAMPLES}
 
+ml-examples/idaHeat2D_bnd: IDA.cmxa ml-examples/idaHeat2D_bnd.ml
+	${OCAMLOPT} bigarray.cmxa $^ -o $@ ${OCAML_SUN_CPPFLAGS} ${OCAML_SUN_LDFLAGS}
+
 ml-examples/idaRoberts_dns: IDA.cmxa ml-examples/idaRoberts_dns.ml
 	${OCAMLOPT} bigarray.cmxa $^ -o $@ ${OCAML_SUN_CPPFLAGS} ${OCAML_SUN_LDFLAGS}
 
 c-examples/idaRoberts_dns: c-examples/idaRoberts_dns.c
-	${CC} ${CPPFLAGS} ${SUN_CPPFLAGS} ${CFLAGS} -c c-examples/idaRoberts_dns.c -o c-examples/idaRoberts_dns.o
-	${CC} -o c-examples/idaRoberts_dns c-examples/idaRoberts_dns.o ${CFLAGS} ${LDFLAGS} ${SUN_LDFLAGS}
+	${CC} ${CPPFLAGS} ${SUN_CPPFLAGS} ${CFLAGS} -o $@ $^ ${LDFLAGS} ${SUN_LDFLAGS}
+
+c-examples/idaHeat2D_bnd: c-examples/idaHeat2D_bnd.c
+	${CC} ${CPPFLAGS} ${SUN_CPPFLAGS} ${CFLAGS} -o $@ $^ ${LDFLAGS} ${SUN_LDFLAGS}
 
 IDA.cmxa: IDA_Raw.cmx IDA_stubs.o
 	${OCAMLOPT} -a -o $@ $^ ${OCAML_SUN_CPPFLAGS} ${OCAML_SUN_LDFLAGS}
